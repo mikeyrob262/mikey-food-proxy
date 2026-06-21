@@ -25,17 +25,21 @@ async function handleRequest(request) {
     if (usdaRes.status === 'fulfilled' && usdaRes.value.ok) {
       const data = await usdaRes.value.json()
       const usdaFoods = (data.foods||[]).map(p => {
-        let cal=0,pro=0,carb=0,fat=0
+        let cal=0,pro=0,carb=0,fat=0,fiber=0,satFat=0,sodium=0,sugar=0
         ;(p.foodNutrients||[]).forEach(n => {
           if(n.nutrientId===1008) cal=Math.round(n.value||0)
           else if(n.nutrientId===1003) pro=Math.round((n.value||0)*10)/10
           else if(n.nutrientId===1005) carb=Math.round((n.value||0)*10)/10
           else if(n.nutrientId===1004) fat=Math.round((n.value||0)*10)/10
+          else if(n.nutrientId===1079) fiber=Math.round((n.value||0)*10)/10
+          else if(n.nutrientId===1258) satFat=Math.round((n.value||0)*10)/10
+          else if(n.nutrientId===1093) sodium=Math.round(n.value||0)
+          else if(n.nutrientId===2000) sugar=Math.round((n.value||0)*10)/10
         })
         if(!cal) return null
         return {
           n: p.description + (p.brandOwner?' - '+p.brandOwner.split(',')[0]:''),
-          cal, p:pro, c:carb, f:fat,
+          cal, p:pro, c:carb, f:fat, fiber, satFat, sodium, sugar,
           srv: p.servingSize ? p.servingSize+(p.servingSizeUnit||'g') : '1 serving'
         }
       }).filter(Boolean)
@@ -50,13 +54,17 @@ async function handleRequest(request) {
         if(!name) return null
         const nu = p.nutriments || {}
         const cal = Math.round(nu['energy-kcal_serving'] || nu['energy-kcal_100g'] || 0)
-        const pro = Math.round((nu['proteins_serving'] || nu['proteins_100g'] || 0)*10)/10
-        const carb = Math.round((nu['carbohydrates_serving'] || nu['carbohydrates_100g'] || 0)*10)/10
-        const fat = Math.round((nu['fat_serving'] || nu['fat_100g'] || 0)*10)/10
         if(!cal) return null
         return {
           n: brand ? name + ' - ' + brand : name,
-          cal, p:pro, c:carb, f:fat,
+          cal,
+          p: Math.round((nu['proteins_serving'] || nu['proteins_100g'] || 0)*10)/10,
+          c: Math.round((nu['carbohydrates_serving'] || nu['carbohydrates_100g'] || 0)*10)/10,
+          f: Math.round((nu['fat_serving'] || nu['fat_100g'] || 0)*10)/10,
+          fiber: Math.round((nu['fiber_serving'] || nu['fiber_100g'] || 0)*10)/10,
+          satFat: Math.round((nu['saturated-fat_serving'] || nu['saturated-fat_100g'] || 0)*10)/10,
+          sodium: Math.round(nu['sodium_serving'] || nu['sodium_100g'] || 0),
+          sugar: Math.round((nu['sugars_serving'] || nu['sugars_100g'] || 0)*10)/10,
           srv: p.serving_size || '1 serving'
         }
       }).filter(Boolean)
