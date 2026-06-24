@@ -14,6 +14,30 @@ async function handleRequest(request) {
     return new Response(null, {headers: {...headers, 'Access-Control-Allow-Headers': 'Authorization, Content-Type'}})
   }
 
+  // ── CLAUDE API PROXY ─────────────────────────────────────────────────────
+  if (url.pathname.endsWith('/claude')) {
+    try {
+      const body = await request.json()
+      const apiKey = typeof ANTHROPIC_API_KEY !== 'undefined' ? ANTHROPIC_API_KEY : ''
+      if (!apiKey) {
+        return new Response(JSON.stringify({error:{message:'ANTHROPIC_API_KEY secret not set on worker'}}), {headers})
+      }
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify(body)
+      })
+      const data = await res.json()
+      return new Response(JSON.stringify(data), {headers})
+    } catch(e) {
+      return new Response(JSON.stringify({error:{message:e.message}}), {headers})
+    }
+  }
+
   // ── INTERVALS.ICU PROXY ──────────────────────────────────────────────────
   const action = url.searchParams.get('action')
   if (action === 'intervals_sync') {
