@@ -52,10 +52,15 @@ async function handleRequest(request) {
         expires_at: tokenData.expires_at,
         athlete_id: tokenData.athlete && tokenData.athlete.id
       });
-      // Redirect back to app with token as query param (survives iOS Safari redirects)
-      const sep = appUrl.includes('?') ? '&' : '?';
-      const redirectUrl = appUrl + sep + 'strava_token=' + encodeURIComponent(token);
-      return Response.redirect(redirectUrl, 302);
+      // Show token on a page the user can copy, with a button to go back to app
+      const html = '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Strava Connected</title><style>body{font-family:-apple-system,sans-serif;padding:20px;background:#1c1c1e;color:white;text-align:center}button{background:#FC4C02;border:none;color:white;font-size:16px;font-weight:700;padding:14px 28px;border-radius:20px;cursor:pointer;margin:10px}input{width:90%;padding:10px;border-radius:8px;border:none;font-size:11px;font-family:monospace;margin:10px 0}</style></head><body>'
+        + '<h2>✅ Strava Connected!</h2>'
+        + '<p>Copy this token and paste it in your Training App Settings:</p>'
+        + '<input id="t" value=' + JSON.stringify(token) + ' readonly onclick="this.select()">'
+        + '<br><button onclick="document.getElementById('t').select();document.execCommand('copy');this.textContent='✅ Copied!'">Copy Token</button>'
+        + '<br><br><a href="' + appUrl + '" style="color:#FC4C02;font-size:14px">← Back to Training App</a>'
+        + '</body></html>';
+      return new Response(html, { headers: { 'Content-Type': 'text/html' } });
     } catch(e) {
       return new Response('OAuth error: ' + e.message, { status: 500 });
     }
