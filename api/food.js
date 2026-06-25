@@ -169,7 +169,10 @@ export default {
         max_watts: data.max_watts || null,
         work_kj: data.kilojoules ? Math.round(data.kilojoules) : null,
         suffer_score: data.suffer_score || null,
-        device_watts: data.device_watts || false
+        device_watts: data.device_watts || false,
+        elapsed_secs: data.elapsed_time || data.moving_time || null,
+        avg_speed: data.average_speed ? Math.round(data.average_speed * 2.23694 * 10) / 10 : null,
+        max_speed: data.max_speed ? Math.round(data.max_speed * 2.23694 * 10) / 10 : null
       }), {headers});
     } catch(e) {
       return new Response(JSON.stringify({error:e.message}), {headers});
