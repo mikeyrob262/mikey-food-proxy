@@ -160,6 +160,36 @@ async function handleRequest(request) {
   // ── INTERVALS.ICU PROXY ──────────────────────────────────────────────────
   const action = url.searchParams.get('action')
 
+  // Fetch single activity detail (more fields than list endpoint)
+  if (action === 'intervals_activity') {
+    const athleteId = url.searchParams.get('athlete') || 'i544205'
+    const apiKey = url.searchParams.get('key')
+    const actId = url.searchParams.get('id')
+    if (!apiKey || !actId) return new Response(JSON.stringify({error:'Missing key or id'}), {headers})
+    try {
+      const auth = btoa('API_KEY:' + apiKey)
+      const res = await fetch(`https://intervals.icu/api/v1/activity/${actId}`, {
+        headers: {'Authorization': 'Basic ' + auth}
+      })
+      if (!res.ok) return new Response(JSON.stringify({error:'ICU error: '+res.status}), {headers})
+      const data = await res.json()
+      return new Response(JSON.stringify({
+        np: data.weighted_average_watts || data.icu_normalized_watts || null,
+        maxPwr: data.max_watts || data.icu_max_watts || null,
+        max20: data.icu_20min_watts || data.p1200 || null,
+        workKj: data.kilojoules || (data.icu_joules ? Math.round(data.icu_joules/1000) : null),
+        ifPct: data.icu_intensity || null,
+        tss: data.icu_training_load || null,
+        // debug
+        all_keys: Object.keys(data).filter(k => k.includes('watt') || k.includes('power') || k.includes('kj') || k.includes('joule') || k.includes('intensity') || k.includes('p1') || k.includes('p3') || k.includes('p12'))
+      }), {headers})
+    } catch(e) {
+      return new Response(JSON.stringify({error:e.message}), {headers})
+    }
+  }
+
+
+
   // Wellness/PMC endpoint — returns CTL, ATL, TSB for last N days
   if (action === 'intervals_wellness') {
     const athleteId = url.searchParams.get('athlete') || 'i544205'
