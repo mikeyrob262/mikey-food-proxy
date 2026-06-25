@@ -79,6 +79,43 @@ async function handleRequest(request) {
     }
   }
 
+  // Step 4b: Debug — dump raw Strava activity fields
+  if (url.pathname === '/strava/activity_debug') {
+    const activityDate = url.searchParams.get('date');
+    const accessToken = url.searchParams.get('token');
+    const distMiles = parseFloat(url.searchParams.get('dist') || '0');
+    if (!accessToken || !activityDate) return new Response(JSON.stringify({error:'Need token and date'}), {headers});
+    try {
+      const dateTs = Math.floor(new Date(activityDate).getTime() / 1000);
+      const listRes = await fetch(`https://www.strava.com/api/v3/athlete/activities?before=${dateTs+86400}&after=${dateTs-3600}&per_page=10`, {
+        headers: {'Authorization': 'Bearer ' + accessToken}
+      });
+      const activities = await listRes.json();
+      if (!Array.isArray(activities) || !activities.length) return new Response(JSON.stringify({error:'No activities found on '+activityDate}), {headers});
+      const distMeters = distMiles * 1609.34;
+      let match = activities.find(a => Math.abs((a.distance||0) - distMeters) / distMeters < 0.1) || activities[0];
+      // Fetch full detail
+      const detailRes = await fetch(`https://www.strava.com/api/v3/activities/${match.id}`, {
+        headers: {'Authorization': 'Bearer ' + accessToken}
+      });
+      const detail = await detailRes.json();
+      return new Response(JSON.stringify({
+        id: detail.id,
+        name: detail.name,
+        weighted_average_watts: detail.weighted_average_watts,
+        max_watts: detail.max_watts,
+        average_watts: detail.average_watts,
+        kilojoules: detail.kilojoules,
+        device_watts: detail.device_watts,
+        has_heartrate: detail.has_heartrate,
+        suffer_score: detail.suffer_score,
+        map_has_polyline: !!(detail.map && detail.map.polyline)
+      }), {headers});
+    } catch(e) {
+      return new Response(JSON.stringify({error:e.message}), {headers});
+    }
+  }
+
   // Step 4: Fetch activity polyline — looks up by date if ID starts with 'i' (Intervals.icu)
   if (url.pathname === '/strava/activity') {
     const activityId = url.searchParams.get('id');
