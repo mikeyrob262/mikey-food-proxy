@@ -171,6 +171,9 @@ async function handleRequest(request) {
         np: data.weighted_average_watts || null,
         max_watts: data.max_watts || null,
         work_kj: data.kilojoules ? Math.round(data.kilojoules) : null,
+        np: data.weighted_average_watts || null,
+        max_watts: data.max_watts || null,
+        work_kj: data.kilojoules ? Math.round(data.kilojoules) : null,
         suffer_score: data.suffer_score || null,
         device_watts: data.device_watts || false
       }), {headers});
