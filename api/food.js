@@ -79,28 +79,54 @@ async function handleRequest(request) {
     }
   }
 
-  // Step 4: Fetch activity polyline
+  // Step 4: Fetch activity polyline — looks up by date if ID starts with 'i' (Intervals.icu)
   if (url.pathname === '/strava/activity') {
     const activityId = url.searchParams.get('id');
     const accessToken = url.searchParams.get('token');
-    if (!activityId || !accessToken) return new Response(JSON.stringify({error:'Missing id or token'}), {headers});
+    const activityDate = url.searchParams.get('date'); // YYYY-MM-DD
+    const activityDist = parseFloat(url.searchParams.get('dist') || '0'); // miles
+    if (!accessToken) return new Response(JSON.stringify({error:'Missing token'}), {headers});
+
     try {
-      const res = await fetch(`https://www.strava.com/api/v3/activities/${activityId}`, {
+      let stravaActivityId = activityId;
+
+      // If ID looks like an Intervals.icu ID (starts with letter), find real Strava ID by date
+      if (!activityId || isNaN(activityId) || activityId.match(/^[a-z]/i)) {
+        if (!activityDate) return new Response(JSON.stringify({error:'Need date to look up Strava activity. ID: '+activityId}), {headers});
+        // Search Strava activities around the given date
+        const dateTs = Math.floor(new Date(activityDate).getTime() / 1000);
+        const before = dateTs + 86400;
+        const after = dateTs - 3600;
+        const listRes = await fetch(`https://www.strava.com/api/v3/athlete/activities?before=${before}&after=${after}&per_page=10`, {
+          headers: {'Authorization': 'Bearer ' + accessToken}
+        });
+        if (listRes.status === 401) return new Response(JSON.stringify({error:'token_expired'}), {headers});
+        const activities = await listRes.json();
+        if (!Array.isArray(activities) || !activities.length) {
+          return new Response(JSON.stringify({error:'No Strava activities found on '+activityDate}), {headers});
+        }
+        // Match by distance (within 10%) if we have it, otherwise take first ride
+        let match = activities.find(a => a.type === 'Ride' || a.type === 'VirtualRide');
+        if (activityDist > 0) {
+          const distMeters = activityDist * 1609.34;
+          match = activities.find(a => Math.abs((a.distance||0) - distMeters) / distMeters < 0.1) || match;
+        }
+        if (!match) return new Response(JSON.stringify({error:'No matching ride on Strava for '+activityDate}), {headers});
+        stravaActivityId = match.id;
+      }
+
+      // Fetch full activity with polyline
+      const res = await fetch(`https://www.strava.com/api/v3/activities/${stravaActivityId}`, {
         headers: {'Authorization': 'Bearer ' + accessToken}
       });
       if (res.status === 401) return new Response(JSON.stringify({error:'token_expired'}), {headers});
-      if (res.status === 404) return new Response(JSON.stringify({error:'Activity not found on Strava. ID: '+activityId}), {headers});
-      if (!res.ok) return new Response(JSON.stringify({error:'Strava API error: '+res.status, id:activityId}), {headers});
+      if (!res.ok) return new Response(JSON.stringify({error:'Strava error: '+res.status+' for ID '+stravaActivityId}), {headers});
       const data = await res.json();
-      // Debug: return full map object so we can see what fields exist
+      const polyline = data.map && (data.map.polyline || data.map.summary_polyline);
       return new Response(JSON.stringify({
-        polyline: data.map && (data.map.polyline || data.map.summary_polyline),
-        name: data.name,
-        distance: data.distance,
-        elevation: data.total_elevation_gain,
-        debug_id: activityId,
-        debug_map: data.map ? {has_polyline: !!data.map.polyline, has_summary: !!data.map.summary_polyline, id: data.map.id} : 'no map field',
-        debug_activity_id: data.id
+        polyline: polyline || null,
+        strava_id: stravaActivityId,
+        name: data.name
       }), {headers});
     } catch(e) {
       return new Response(JSON.stringify({error:e.message}), {headers});
