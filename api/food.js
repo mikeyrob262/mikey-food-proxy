@@ -14,6 +14,93 @@ async function handleRequest(request) {
     return new Response(null, {headers: {...headers, 'Access-Control-Allow-Headers': 'Authorization, Content-Type'}})
   }
 
+
+  // ── STRAVA OAUTH ─────────────────────────────────────────────────────────
+  const STRAVA_CLIENT_ID = '260935';
+  const STRAVA_CLIENT_SECRET = '570c52239e99be3ba40d9c47ed78d5107c5725ba';
+  const STRAVA_REDIRECT_URI = 'https://mikey-food-api2.mgrobinson07.workers.dev/strava/callback';
+
+  // Step 1: Redirect to Strava auth page
+  if (url.pathname === '/strava/auth') {
+    const appUrl = url.searchParams.get('app') || 'https://training-plan.mgrobinson07.workers.dev';
+    const scope = 'read,activity:read_all';
+    const authUrl = `https://www.strava.com/oauth/authorize?client_id=${STRAVA_CLIENT_ID}&redirect_uri=${encodeURIComponent(STRAVA_REDIRECT_URI)}&response_type=code&scope=${scope}&state=${encodeURIComponent(appUrl)}`;
+    return Response.redirect(authUrl, 302);
+  }
+
+  // Step 2: OAuth callback
+  if (url.pathname === '/strava/callback') {
+    const code = url.searchParams.get('code');
+    const appUrl = decodeURIComponent(url.searchParams.get('state') || 'https://training-plan.mgrobinson07.workers.dev');
+    if (!code) return new Response('No code received', { status: 400 });
+    try {
+      const tokenRes = await fetch('https://www.strava.com/oauth/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: STRAVA_CLIENT_ID,
+          client_secret: STRAVA_CLIENT_SECRET,
+          code: code,
+          grant_type: 'authorization_code'
+        })
+      });
+      const tokenData = await tokenRes.json();
+      if (tokenData.errors) return new Response('Token error: ' + JSON.stringify(tokenData.errors), { status: 400 });
+      const redirectUrl = appUrl + '#strava_token=' + encodeURIComponent(JSON.stringify({
+        access_token: tokenData.access_token,
+        refresh_token: tokenData.refresh_token,
+        expires_at: tokenData.expires_at,
+        athlete_id: tokenData.athlete && tokenData.athlete.id
+      }));
+      return Response.redirect(redirectUrl, 302);
+    } catch(e) {
+      return new Response('OAuth error: ' + e.message, { status: 500 });
+    }
+  }
+
+  // Step 3: Refresh token
+  if (url.pathname === '/strava/refresh') {
+    const refreshToken = url.searchParams.get('refresh_token');
+    if (!refreshToken) return new Response(JSON.stringify({error:'No refresh token'}), {headers});
+    try {
+      const res = await fetch('https://www.strava.com/oauth/token', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          client_id: STRAVA_CLIENT_ID,
+          client_secret: STRAVA_CLIENT_SECRET,
+          refresh_token: refreshToken,
+          grant_type: 'refresh_token'
+        })
+      });
+      return new Response(JSON.stringify(await res.json()), {headers});
+    } catch(e) {
+      return new Response(JSON.stringify({error:e.message}), {headers});
+    }
+  }
+
+  // Step 4: Fetch activity polyline
+  if (url.pathname === '/strava/activity') {
+    const activityId = url.searchParams.get('id');
+    const accessToken = url.searchParams.get('token');
+    if (!activityId || !accessToken) return new Response(JSON.stringify({error:'Missing id or token'}), {headers});
+    try {
+      const res = await fetch(`https://www.strava.com/api/v3/activities/${activityId}`, {
+        headers: {'Authorization': 'Bearer ' + accessToken}
+      });
+      if (res.status === 401) return new Response(JSON.stringify({error:'token_expired'}), {headers});
+      const data = await res.json();
+      return new Response(JSON.stringify({
+        polyline: data.map && (data.map.polyline || data.map.summary_polyline),
+        name: data.name,
+        distance: data.distance,
+        elevation: data.total_elevation_gain
+      }), {headers});
+    } catch(e) {
+      return new Response(JSON.stringify({error:e.message}), {headers});
+    }
+  }
+
   // ── CLAUDE API PROXY ─────────────────────────────────────────────────────
   if (url.pathname.endsWith('/claude')) {
     try {
