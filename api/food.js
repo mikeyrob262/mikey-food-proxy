@@ -40,6 +40,26 @@ async function handleRequest(request) {
 
   // ── INTERVALS.ICU PROXY ──────────────────────────────────────────────────
   const action = url.searchParams.get('action')
+
+  // Wellness/PMC endpoint — returns CTL, ATL, TSB for last N days
+  if (action === 'intervals_wellness') {
+    const athleteId = url.searchParams.get('athlete') || 'i544205'
+    const apiKey = url.searchParams.get('key')
+    const days = parseInt(url.searchParams.get('days') || '90')
+    if (!apiKey) return new Response(JSON.stringify({error:'No API key'}), {headers})
+    try {
+      const auth = btoa('API_KEY:' + apiKey)
+      const oldest = new Date(Date.now() - days*24*60*60*1000).toISOString().slice(0,10)
+      const wUrl = `https://intervals.icu/api/v1/athlete/${athleteId}/wellness?oldest=${oldest}`
+      const res = await fetch(wUrl, {headers: {'Authorization': 'Basic ' + auth}})
+      if (!res.ok) return new Response(JSON.stringify({error:'Intervals.icu wellness error: '+res.status}), {headers})
+      const data = await res.json()
+      return new Response(JSON.stringify({wellness: data}), {headers})
+    } catch(e) {
+      return new Response(JSON.stringify({error: e.message}), {headers})
+    }
+  }
+
   if (action === 'intervals_sync') {
     const athleteId = url.searchParams.get('athlete') || 'i544205'
     const apiKey = url.searchParams.get('key')
