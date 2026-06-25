@@ -203,6 +203,50 @@ export default {
   // ── INTERVALS.ICU PROXY ──────────────────────────────────────────────────
   const action = url.searchParams.get('action')
 
+  if (action === 'strava_activity') {
+    const activityId = url.searchParams.get('id');
+    const accessToken = url.searchParams.get('token');
+    const activityDate = url.searchParams.get('date');
+    const distMiles = parseFloat(url.searchParams.get('dist') || '0');
+    if (!accessToken) return new Response(JSON.stringify({error:'Missing token'}), {headers});
+    try {
+      let stravaActivityId = activityId;
+      // If ID looks like Intervals.icu ID (starts with letter or 'i'), look up by date
+      if (!activityId || isNaN(activityId) || /^[a-z]/i.test(activityId)) {
+        if (!activityDate) return new Response(JSON.stringify({error:'Need date to look up activity'}), {headers});
+        const dateTs = Math.floor(new Date(activityDate).getTime() / 1000);
+        const listRes = await fetch(`https://www.strava.com/api/v3/athlete/activities?before=${dateTs+86400}&after=${dateTs-3600}&per_page=10`, {
+          headers: {'Authorization': 'Bearer ' + accessToken}
+        });
+        if (listRes.status === 401) return new Response(JSON.stringify({error:'token_expired'}), {headers});
+        const activities = await listRes.json();
+        if (!Array.isArray(activities) || !activities.length) return new Response(JSON.stringify({error:'No Strava activities on '+activityDate}), {headers});
+        const distMeters = distMiles * 1609.34;
+        let match = distMiles > 0 ? activities.find(a => Math.abs((a.distance||0) - distMeters) / distMeters < 0.1) : null;
+        match = match || activities.find(a => a.type === 'Ride' || a.type === 'VirtualRide') || activities[0];
+        stravaActivityId = match.id;
+      }
+      const res = await fetch(`https://www.strava.com/api/v3/activities/${stravaActivityId}`, {
+        headers: {'Authorization': 'Bearer ' + accessToken}
+      });
+      if (res.status === 401) return new Response(JSON.stringify({error:'token_expired'}), {headers});
+      if (!res.ok) return new Response(JSON.stringify({error:'Strava error '+res.status}), {headers});
+      const data = await res.json();
+      const polyline = data.map && (data.map.polyline || data.map.summary_polyline);
+      return new Response(JSON.stringify({
+        polyline: polyline || null,
+        strava_id: stravaActivityId,
+        name: data.name,
+        np: data.weighted_average_watts || null,
+        max_watts: data.max_watts || null,
+        work_kj: data.kilojoules ? Math.round(data.kilojoules) : null,
+        suffer_score: data.suffer_score || null
+      }), {headers});
+    } catch(e) {
+      return new Response(JSON.stringify({error: e.message}), {headers});
+    }
+  }
+
   if (action === 'strava_auth') {
     const appUrl = url.searchParams.get('app') || 'https://training-plan.mgrobinson07.workers.dev';
     const scope = 'read,activity:read_all';
