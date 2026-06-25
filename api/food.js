@@ -206,6 +206,28 @@ export default {
   // ── INTERVALS.ICU PROXY ──────────────────────────────────────────────────
   const action = url.searchParams.get('action')
 
+  // Fetch activity streams (power, HR, speed data)
+  if (action === 'strava_streams') {
+    const activityId = url.searchParams.get('id');
+    const accessToken = url.searchParams.get('token');
+    if (!activityId || !accessToken) return new Response(JSON.stringify({error:'Missing id or token'}), {headers});
+    try {
+      const res = await fetch(`https://www.strava.com/api/v3/activities/${activityId}/streams?keys=watts,heartrate,velocity_smooth&key_by_type=true&series_type=distance&resolution=low`, {
+        headers: {'Authorization': 'Bearer ' + accessToken}
+      });
+      if (res.status === 401) return new Response(JSON.stringify({error:'token_expired'}), {headers});
+      if (!res.ok) return new Response(JSON.stringify({error:'Streams error: '+res.status}), {headers});
+      const data = await res.json();
+      return new Response(JSON.stringify({
+        watts: data.watts ? data.watts.data : null,
+        heartrate: data.heartrate ? data.heartrate.data : null,
+        velocity: data.velocity_smooth ? data.velocity_smooth.data.map(function(v){ return Math.round(v * 2.23694 * 10) / 10; }) : null
+      }), {headers});
+    } catch(e) {
+      return new Response(JSON.stringify({error: e.message}), {headers});
+    }
+  }
+
   if (action === 'strava_activity') {
     const activityId = url.searchParams.get('id');
     const accessToken = url.searchParams.get('token');
