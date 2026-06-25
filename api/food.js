@@ -89,12 +89,18 @@ async function handleRequest(request) {
         headers: {'Authorization': 'Bearer ' + accessToken}
       });
       if (res.status === 401) return new Response(JSON.stringify({error:'token_expired'}), {headers});
+      if (res.status === 404) return new Response(JSON.stringify({error:'Activity not found on Strava. ID: '+activityId}), {headers});
+      if (!res.ok) return new Response(JSON.stringify({error:'Strava API error: '+res.status, id:activityId}), {headers});
       const data = await res.json();
+      // Debug: return full map object so we can see what fields exist
       return new Response(JSON.stringify({
         polyline: data.map && (data.map.polyline || data.map.summary_polyline),
         name: data.name,
         distance: data.distance,
-        elevation: data.total_elevation_gain
+        elevation: data.total_elevation_gain,
+        debug_id: activityId,
+        debug_map: data.map ? {has_polyline: !!data.map.polyline, has_summary: !!data.map.summary_polyline, id: data.map.id} : 'no map field',
+        debug_activity_id: data.id
       }), {headers});
     } catch(e) {
       return new Response(JSON.stringify({error:e.message}), {headers});
