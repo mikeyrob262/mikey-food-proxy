@@ -52,20 +52,10 @@ async function handleRequest(request) {
         expires_at: tokenData.expires_at,
         athlete_id: tokenData.athlete && tokenData.athlete.id
       });
-      // Return an HTML page that saves token to localStorage then redirects
-      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Connecting...</title></head><body>
-<script>
-try {
-  localStorage.setItem('mta2_strava', ${JSON.stringify(token)});
-  document.write('<p>✅ Strava connected! Redirecting...</p>');
-} catch(e) {
-  document.write('<p>Error: ' + e.message + '</p>');
-}
-setTimeout(function(){ window.location.href = ${JSON.stringify(appUrl)}; }, 1000);
-<\/script>
-<p>Connecting to Strava...</p>
-</body></html>`;
-      return new Response(html, { headers: { 'Content-Type': 'text/html' } });
+      // Redirect back to app with token as query param (survives iOS Safari redirects)
+      const sep = appUrl.includes('?') ? '&' : '?';
+      const redirectUrl = appUrl + sep + 'strava_token=' + encodeURIComponent(token);
+      return Response.redirect(redirectUrl, 302);
     } catch(e) {
       return new Response('OAuth error: ' + e.message, { status: 500 });
     }
