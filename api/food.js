@@ -28,7 +28,7 @@ async function handleRequest(request) {
     return Response.redirect(authUrl, 302);
   }
 
-  // Step 2: OAuth callback
+  // Step 2: OAuth callback - returns HTML page that posts token to opener
   if (url.pathname === '/strava/callback') {
     const code = url.searchParams.get('code');
     const appUrl = decodeURIComponent(url.searchParams.get('state') || 'https://training-plan.mgrobinson07.workers.dev');
@@ -46,13 +46,26 @@ async function handleRequest(request) {
       });
       const tokenData = await tokenRes.json();
       if (tokenData.errors) return new Response('Token error: ' + JSON.stringify(tokenData.errors), { status: 400 });
-      const redirectUrl = appUrl + '#strava_token=' + encodeURIComponent(JSON.stringify({
+      const token = JSON.stringify({
         access_token: tokenData.access_token,
         refresh_token: tokenData.refresh_token,
         expires_at: tokenData.expires_at,
         athlete_id: tokenData.athlete && tokenData.athlete.id
-      }));
-      return Response.redirect(redirectUrl, 302);
+      });
+      // Return an HTML page that saves token to localStorage then redirects
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Connecting...</title></head><body>
+<script>
+try {
+  localStorage.setItem('mta2_strava', ${JSON.stringify(token)});
+  document.write('<p>✅ Strava connected! Redirecting...</p>');
+} catch(e) {
+  document.write('<p>Error: ' + e.message + '</p>');
+}
+setTimeout(function(){ window.location.href = ${JSON.stringify(appUrl)}; }, 1000);
+<\/script>
+<p>Connecting to Strava...</p>
+</body></html>`;
+      return new Response(html, { headers: { 'Content-Type': 'text/html' } });
     } catch(e) {
       return new Response('OAuth error: ' + e.message, { status: 500 });
     }
