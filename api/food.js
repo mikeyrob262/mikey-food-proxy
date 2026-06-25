@@ -123,10 +123,16 @@ async function handleRequest(request) {
       if (!res.ok) return new Response(JSON.stringify({error:'Strava error: '+res.status+' for ID '+stravaActivityId}), {headers});
       const data = await res.json();
       const polyline = data.map && (data.map.polyline || data.map.summary_polyline);
+      // Extract power fields from Strava activity detail
       return new Response(JSON.stringify({
         polyline: polyline || null,
         strava_id: stravaActivityId,
-        name: data.name
+        name: data.name,
+        np: data.weighted_average_watts || null,
+        max_watts: data.max_watts || null,
+        work_kj: data.kilojoules ? Math.round(data.kilojoules) : null,
+        suffer_score: data.suffer_score || null,
+        device_watts: data.device_watts || false
       }), {headers});
     } catch(e) {
       return new Response(JSON.stringify({error:e.message}), {headers});
