@@ -204,19 +204,12 @@ async function handleRequest(request) {
     try {
       const auth = btoa('API_KEY:' + apiKey)
       const oldest = new Date(Date.now() - 7*24*60*60*1000).toISOString().slice(0,10)
-      const iUrl = `https://intervals.icu/api/v1/athlete/${athleteId}/activities?oldest=${oldest}&limit=3`
+      const iUrl = `https://intervals.icu/api/v1/athlete/${athleteId}/activities?oldest=${oldest}&limit=1`
       const res = await fetch(iUrl, {headers: {'Authorization': 'Basic ' + auth}})
       const data = await res.json()
-      // Return first activity's raw fields so we can see what's available
       const first = Array.isArray(data) ? data[0] : data
-      return new Response(JSON.stringify({
-        keys: first ? Object.keys(first) : [],
-        id: first && first.id,
-        strava_id: first && first.strava_id,
-        external_id: first && first.external_id,
-        name: first && first.name,
-        start_date: first && first.start_date_local
-      }), {headers})
+      // Return the FULL raw activity so we can see every field
+      return new Response(JSON.stringify(first), {headers})
     } catch(e) {
       return new Response(JSON.stringify({error: e.message}), {headers})
     }
