@@ -21,7 +21,7 @@ async function handleRequest(request) {
   const STRAVA_REDIRECT_URI = 'https://mikey-food-api2.mgrobinson07.workers.dev/strava/callback';
 
   // Step 1: Redirect to Strava auth page
-  if (url.pathname === '/strava/auth') {
+  if (url.pathname === '/strava/auth' || action === 'strava_auth') {
     const appUrl = url.searchParams.get('app') || 'https://training-plan.mgrobinson07.workers.dev';
     const scope = 'read,activity:read_all';
     const authUrl = `https://www.strava.com/oauth/authorize?client_id=${STRAVA_CLIENT_ID}&redirect_uri=${encodeURIComponent(STRAVA_REDIRECT_URI)}&response_type=code&scope=${scope}&state=${encodeURIComponent(appUrl)}`;
