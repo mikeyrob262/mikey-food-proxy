@@ -1,8 +1,5 @@
-addEventListener('fetch', event => {
-  event.respondWith(handleRequest(event.request))
-})
-
-async function handleRequest(request) {
+export default {
+  async fetch(request) {
   const url = new URL(request.url)
   const headers = {
     'Content-Type': 'application/json',
@@ -168,9 +165,6 @@ async function handleRequest(request) {
         polyline: polyline || null,
         strava_id: stravaActivityId,
         name: data.name,
-        np: data.weighted_average_watts || null,
-        max_watts: data.max_watts || null,
-        work_kj: data.kilojoules ? Math.round(data.kilojoules) : null,
         np: data.weighted_average_watts || null,
         max_watts: data.max_watts || null,
         work_kj: data.kilojoules ? Math.round(data.kilojoules) : null,
@@ -373,5 +367,6 @@ async function handleRequest(request) {
     return new Response(JSON.stringify({foods: foods.slice(0,35)}), {headers})
   } catch(e) {
     return new Response(JSON.stringify({foods:[], error:e.message}), {headers})
+  }
   }
 }
