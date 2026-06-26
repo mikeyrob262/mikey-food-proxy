@@ -1,6 +1,6 @@
 // v2
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
   const url = new URL(request.url)
   const headers = {
     'Content-Type': 'application/json',
@@ -181,10 +181,10 @@ export default {
   }
 
   // ── CLAUDE API PROXY ─────────────────────────────────────────────────────
-  if (url.pathname.endsWith('/claude')) {
+  if (url.pathname.endsWith('/claude') || action === 'claude') {
     try {
       const body = await request.json()
-      const apiKey = typeof ANTHROPIC_API_KEY !== 'undefined' ? ANTHROPIC_API_KEY : ''
+      const apiKey = (env && env.ANTHROPIC_API_KEY) || (typeof ANTHROPIC_API_KEY !== 'undefined' ? ANTHROPIC_API_KEY : '')
       if (!apiKey) {
         return new Response(JSON.stringify({error:{message:'ANTHROPIC_API_KEY secret not set on worker'}}), {headers})
       }
