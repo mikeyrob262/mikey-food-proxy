@@ -167,13 +167,24 @@ export default {
         strava_id: stravaActivityId,
         name: data.name,
         np: data.weighted_average_watts || null,
+        avg_watts: data.average_watts || null,
         max_watts: data.max_watts || null,
         work_kj: data.kilojoules ? Math.round(data.kilojoules) : null,
         suffer_score: data.suffer_score || null,
+        tss: data.suffer_score || null,
+        if_pct: data.intensity_factor || null,
         device_watts: data.device_watts || false,
-        elapsed_secs: data.elapsed_time || data.moving_time || null,
+        elapsed_secs: data.elapsed_time || null,
+        moving_secs: data.moving_time || null,
+        distance_mi: data.distance ? Math.round(data.distance / 1609.34 * 10) / 10 : null,
+        avg_hr: data.average_heartrate ? Math.round(data.average_heartrate) : null,
+        max_hr: data.max_heartrate ? Math.round(data.max_heartrate) : null,
+        calories: data.calories || null,
         avg_speed: data.average_speed ? Math.round(data.average_speed * 2.23694 * 10) / 10 : null,
-        max_speed: data.max_speed ? Math.round(data.max_speed * 2.23694 * 10) / 10 : null
+        max_speed: data.max_speed ? Math.round(data.max_speed * 2.23694 * 10) / 10 : null,
+        elev_ft: data.total_elevation_gain ? Math.round(data.total_elevation_gain * 3.2808) : null,
+        cadence: data.average_cadence ? Math.round(data.average_cadence) : null,
+        activity_type: data.type || null
       }), {headers});
     } catch(e) {
       return new Response(JSON.stringify({error:e.message}), {headers});
