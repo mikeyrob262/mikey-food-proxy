@@ -180,6 +180,8 @@ export default {
     }
   }
 
+  const action = url.searchParams.get('action')
+
   // ── CLAUDE API PROXY ─────────────────────────────────────────────────────
   if (url.pathname.endsWith('/claude') || action === 'claude') {
     try {
@@ -205,7 +207,6 @@ export default {
   }
 
   // ── INTERVALS.ICU PROXY ──────────────────────────────────────────────────
-  const action = url.searchParams.get('action')
 
   // Fetch activity streams (power, HR, speed data)
   if (action === 'strava_streams') {
