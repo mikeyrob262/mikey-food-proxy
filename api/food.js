@@ -310,7 +310,7 @@ export default {
     const actId = url.searchParams.get('id')
     if (!apiKey || !actId) return new Response(JSON.stringify({error:'Missing key or id'}), {headers})
     try {
-      const auth = btoa('API_KEY:' + apiKey)
+      const auth = btoa(unescape(encodeURIComponent('API_KEY:' + apiKey)))
       const res = await fetch(`https://intervals.icu/api/v1/activity/${actId}`, {
         headers: {'Authorization': 'Basic ' + auth}
       })
@@ -340,7 +340,7 @@ export default {
     const days = parseInt(url.searchParams.get('days') || '90')
     if (!apiKey) return new Response(JSON.stringify({error:'No API key'}), {headers})
     try {
-      const auth = btoa('API_KEY:' + apiKey)
+      const auth = btoa(unescape(encodeURIComponent('API_KEY:' + apiKey)))
       const oldest = new Date(Date.now() - days*24*60*60*1000).toISOString().slice(0,10)
       const wUrl = `https://intervals.icu/api/v1/athlete/${athleteId}/wellness?oldest=${oldest}`
       const res = await fetch(wUrl, {headers: {'Authorization': 'Basic ' + auth}})
@@ -358,7 +358,7 @@ export default {
     const oldest = url.searchParams.get('oldest') || new Date(Date.now() - 30*24*60*60*1000).toISOString().slice(0,10)
     if (!apiKey) return new Response(JSON.stringify({error:'No API key'}), {headers})
     try {
-      const auth = btoa('API_KEY:' + apiKey)
+      const auth = btoa(unescape(encodeURIComponent('API_KEY:' + apiKey)))
       const iUrl = `https://intervals.icu/api/v1/athlete/${athleteId}/activities?oldest=${oldest}&limit=200`
       const res = await fetch(iUrl, {headers: {'Authorization': 'Basic ' + auth}})
       if (!res.ok) return new Response(JSON.stringify({error:'Intervals.icu error: '+res.status}), {headers})
@@ -375,7 +375,7 @@ export default {
     const apiKey = url.searchParams.get('key')
     if (!apiKey) return new Response(JSON.stringify({error:'No API key'}), {headers})
     try {
-      const auth = btoa('API_KEY:' + apiKey)
+      const auth = btoa(unescape(encodeURIComponent('API_KEY:' + apiKey)))
       const oldest = new Date(Date.now() - 7*24*60*60*1000).toISOString().slice(0,10)
       const iUrl = `https://intervals.icu/api/v1/athlete/${athleteId}/activities?oldest=${oldest}&limit=1`
       const res = await fetch(iUrl, {headers: {'Authorization': 'Basic ' + auth}})
