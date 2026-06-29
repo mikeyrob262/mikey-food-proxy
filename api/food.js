@@ -393,83 +393,57 @@ export default {
   if (!q) return new Response(JSON.stringify({foods:[]}), {headers})
 
   try {
-    // Run USDA branded + foundation searches in parallel for better coverage
-    const usdaBase = 'https://api.nal.usda.gov/fdc/v1/foods/search?api_key=bC38HIShNhDzbFJH9jQUa6HgGFLKzMeeHNrhEeUB'
-    const usdaBrandedUrl = usdaBase + '&query=' + encodeURIComponent(q) + '&pageSize=25&dataType=Branded&sortBy=score&sortOrder=desc'
-    const usdaFoundationUrl = usdaBase + '&query=' + encodeURIComponent(q) + '&pageSize=10&dataType=Foundation,SR%20Legacy,Survey%20(FNDDS)&sortBy=score&sortOrder=desc'
+    const blocked = ['applegate','brownberry','pepperidge farm','nature\'s own']
+    
+    const usdaUrl = 'https://api.nal.usda.gov/fdc/v1/foods/search'
+      + '?query=' + encodeURIComponent(q)
+      + '&pageSize=50&sortBy=score&sortOrder=desc'
+      + '&dataType=Branded,Foundation,SR%20Legacy,Survey%20(FNDDS)'
+      + '&api_key=bC38HIShNhDzbFJH9jQUa6HgGFLKzMeeHNrhEeUB'
 
-    const [brandedRes, foundationRes] = await Promise.allSettled([
-      fetch(usdaBrandedUrl),
-      fetch(usdaFoundationUrl)
-    ])
+    const res = await fetch(usdaUrl)
+    if (!res.ok) return new Response(JSON.stringify({foods:[], error: res.status}), {headers})
+    
+    const usdaData = await res.json()
+    
+    const foods = (usdaData.foods||[]).map(p => {
+      const brandLower = (p.brandOwner||p.brandName||'').toLowerCase()
+      if (blocked.some(b => brandLower.includes(b))) return null
+      if (/[^\x00-\x7F]/.test(p.description)) return null
+      
+      let cal=0,pro=0,carb=0,fat=0,fiber=0,sugar=0,sodium=0,satFat=0,cholesterol=0
+      ;(p.foodNutrients||[]).forEach(n => {
+        const id = n.nutrientId||n.nutrientNumber, v = n.value||0
+        if(id==1008||id=='208') cal=Math.round(v)
+        else if(id==1003||id=='203') pro=Math.round(v*10)/10
+        else if(id==1005||id=='205') carb=Math.round(v*10)/10
+        else if(id==1004||id=='204') fat=Math.round(v*10)/10
+        else if(id==1079||id=='291') fiber=Math.round(v*10)/10
+        else if(id==2000||id=='269') sugar=Math.round(v*10)/10
+        else if(id==1093||id=='307') sodium=Math.round(v)
+        else if(id==1258||id=='606') satFat=Math.round(v*10)/10
+        else if(id==1253||id=='601') cholesterol=Math.round(v)
+      })
+      
+      if(!cal && p.dataType==='Branded') return null
+      
+      const brand = (p.brandOwner||p.brandName||'').split(',')[0].trim()
+      const name = p.description + (brand ? ' - ' + brand : '')
+      const srv = p.servingSize ? (Math.round(p.servingSize) + (p.servingSizeUnit||'g')) : '1 serving'
+      
+      return {n:name, cal, p:pro, c:carb, f:fat, fiber, sugar, sodium, satFat, cholesterol, srv}
+    }).filter(Boolean)
 
-    function parseUSDA(data) {
-      return (data.foods||[]).map(p => {
-        let cal=0,pro=0,carb=0,fat=0,fiber=0,satFat=0,sodium=0,sugar=0,cholesterol=0
-        ;(p.foodNutrients||[]).forEach(n => {
-          const id = n.nutrientId || n.nutrientNumber
-          if(id==1008||id=='208') cal=Math.round(n.value||0)
-          else if(id==1003||id=='203') pro=Math.round((n.value||0)*10)/10
-          else if(id==1005||id=='205') carb=Math.round((n.value||0)*10)/10
-          else if(id==1004||id=='204') fat=Math.round((n.value||0)*10)/10
-          else if(id==1079||id=='291') fiber=Math.round((n.value||0)*10)/10
-          else if(id==1258||id=='606') satFat=Math.round((n.value||0)*10)/10
-          else if(id==1093||id=='307') sodium=Math.round(n.value||0)
-          else if(id==2000||id=='269') sugar=Math.round((n.value||0)*10)/10
-          else if(id==1253||id=='601') cholesterol=Math.round(n.value||0)
-        })
-        if(!cal && !pro && !carb) return null
-        // Build clean name: Description - Brand
-        const brand = (p.brandOwner||p.brandName||'').split(',')[0].trim()
-        const desc = (p.description||'').trim()
-        // Avoid duplicate brand in name
-        const name = brand && !desc.toLowerCase().includes(brand.toLowerCase().substring(0,6))
-          ? desc + ' — ' + brand
-          : desc
-        return {
-          n: name,
-          cal, p:pro, c:carb, f:fat, fiber, satFat, sodium, sugar, cholesterol,
-          srv: p.servingSize ? Math.round(p.servingSize)+(p.servingSizeUnit||'g') : '1 serving',
-          fdcId: p.fdcId
-        }
-      }).filter(Boolean)
-    }
-
-    let foods = []
-
-    if (brandedRes.status === 'fulfilled' && brandedRes.value.ok) {
-      const data = await brandedRes.value.json()
-      foods = foods.concat(parseUSDA(data))
-    }
-
-    if (foundationRes.status === 'fulfilled' && foundationRes.value.ok) {
-      const data = await foundationRes.value.json()
-      foods = foods.concat(parseUSDA(data))
-    }
-
-    // Sort by relevance: exact brand/name match first
-    const qLower = q.toLowerCase()
-    foods.sort((a, b) => {
-      const aName = a.n.toLowerCase()
-      const bName = b.n.toLowerCase()
-      const aExact = aName.startsWith(qLower) ? 2 : aName.includes(qLower) ? 1 : 0
-      const bExact = bName.startsWith(qLower) ? 2 : bName.includes(qLower) ? 1 : 0
-      return bExact - aExact
-    })
-
-    // Deduplicate by name similarity (allow different serving sizes through)
     const seen = new Set()
-    foods = foods.filter(f => {
-      // Key on first 30 chars of normalized name to allow variants
+    const deduped = foods.filter(f => {
       const key = f.n.toLowerCase().replace(/[^a-z0-9]/g,'').substring(0,30)
       if(seen.has(key)) return false
       seen.add(key)
       return true
     })
 
-    return new Response(JSON.stringify({foods: foods.slice(0,40)}), {headers})
+    return new Response(JSON.stringify({foods: deduped.slice(0,30)}), {headers})
   } catch(e) {
-    return new Response(JSON.stringify({foods:[], error:e.message}), {headers})
-  }
+    return new Response(JSON.stringify({foods:[], error: e.message}), {headers})
   }
 }
