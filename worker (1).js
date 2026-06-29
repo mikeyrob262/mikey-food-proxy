@@ -12,7 +12,7 @@ async function handleRequest(request) {
   if (!q) return new Response(JSON.stringify({foods:[]}), {headers})
 
   try {
-    const usdaUrl = 'https://api.nal.usda.gov/fdc/v1/foods/search?query=' + encodeURIComponent(q) + '&pageSize=20&dataType=Branded,Survey%20(FNDDS)&api_key=bC38HIShNhDzbFJH9jQUa6HgGFLKzMeeHNrhEeUB'
+    const usdaUrl = 'https://api.nal.usda.gov/fdc/v1/foods/search?query=' + encodeURIComponent(q) + '&pageSize=50&sortBy=score&sortOrder=desc&dataType=Branded,Survey%20(FNDDS)&api_key=bC38HIShNhDzbFJH9jQUa6HgGFLKzMeeHNrhEeUB'
     const offUrl = 'https://world.openfoodfacts.org/cgi/search.pl?search_terms=' + encodeURIComponent(q) + '&search_simple=1&action=process&json=1&page_size=15&fields=product_name,brands,nutriments,serving_size'
 
     const [usdaRes, offRes] = await Promise.allSettled([
