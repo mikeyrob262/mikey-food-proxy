@@ -469,17 +469,29 @@ export default {
     // (exactly 5) came back with ZERO USDA rows while "beef r" (under 5 local hits) came back with
     // 16. It looked like a query-length rule and was not: it was a local-hit-count rule, and it hid
     // the entire generic-ingredient database behind a handful of restaurant menu items.
-    const usdaUrl = 'https://api.nal.usda.gov/fdc/v1/foods/search?query=' + encodeURIComponent(q)
-      + '&pageSize=20&sortBy=score&sortOrder=desc&dataType=Branded,Foundation,SR%20Legacy'
-      + '&api_key=bC38HIShNhDzbFJH9jQUa6HgGFLKzMeeHNrhEeUB'
+    // TWO FDC CALLS, NOT ONE. FDC's own relevance ranks Branded first, and with a single page of 20
+    // the generic ingredients never make the page for a common one-word term: measured on the live
+    // response, "cheese" came back 25 rows with ZERO Foundation/SR Legacy entries and "milk" 21 with
+    // none. No amount of client-side ranking can promote a row that was never returned - the
+    // ingredient has to be ASKED FOR. So the broad query runs as before and a second query
+    // restricted to the ingredient tiers runs alongside it, merged below.
+    const FDC = 'https://api.nal.usda.gov/fdc/v1/foods/search?query='
+    const KEY = '&api_key=bC38HIShNhDzbFJH9jQUa6HgGFLKzMeeHNrhEeUB'
+    const usdaUrl = FDC + encodeURIComponent(q)
+      + '&pageSize=20&sortBy=score&sortOrder=desc&dataType=Branded,Foundation,SR%20Legacy' + KEY
+    const genericUrl = FDC + encodeURIComponent(q)
+      + '&pageSize=10&sortBy=score&sortOrder=desc&dataType=Foundation,SR%20Legacy' + KEY
 
-    const usdaRes = await fetch(usdaUrl)
+    const [usdaRes, genericRes] = await Promise.all([
+      fetch(usdaUrl),
+      fetch(genericUrl).catch(() => null)
+    ])
 
     let foods = localResults.slice()
 
-    if (usdaRes.ok) {
-      const usdaData = await usdaRes.json()
-      const usdaFoods = (usdaData.foods||[]).map(p => {
+    // ONE mapper for both responses. A second copy of the nutrient logic for the generic call is
+    // exactly how two definitions of one number start.
+    const mapFdc = (list) => (list||[]).map(p => {
         let cal=0,pro=0,carb=0,fat=0,fiber=0,sugar=0,sodium=0,satFat=0
         // ENERGY IS NOT ALWAYS NUTRIENT 1008, AND THAT IS WHY cal CAME BACK 0.
         // Measured against FDC: SR Legacy and Branded rows carry 1008 (Energy, KCAL), but
@@ -521,8 +533,19 @@ export default {
                 dataType: dt, fdcId: p.fdcId || null, brand: brand || null,
                 generic: dt === 'Foundation' || dt === 'SR Legacy' || dt === 'Survey (FNDDS)'}
       }).filter(Boolean)
-      foods = foods.concat(usdaFoods)
-    }
+
+    // The ingredient-tier rows go FIRST among the USDA block, so that when the caller's ranker sees
+    // two rows of equal relevance the ingredient is the one it meets first. Dedupe below removes
+    // anything the broad query already returned, so a term that was already serving generics is
+    // unchanged rather than duplicated.
+    let usdaFoods = []
+    try {
+      if (genericRes && genericRes.ok) usdaFoods = usdaFoods.concat(mapFdc((await genericRes.json()).foods))
+    } catch(e) {}
+    try {
+      if (usdaRes && usdaRes.ok) usdaFoods = usdaFoods.concat(mapFdc((await usdaRes.json()).foods))
+    } catch(e) {}
+    foods = foods.concat(usdaFoods)
 
     const seen = new Set()
     const deduped = foods.filter(f => {
