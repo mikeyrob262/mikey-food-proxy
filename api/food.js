@@ -476,7 +476,20 @@ export default {
     // ingredient has to be ASKED FOR. So the broad query runs as before and a second query
     // restricted to the ingredient tiers runs alongside it, merged below.
     const FDC = 'https://api.nal.usda.gov/fdc/v1/foods/search?query='
-    const KEY = '&api_key=bC38HIShNhDzbFJH9jQUa6HgGFLKzMeeHNrhEeUB'
+    // FROM A WORKER SECRET, NEVER FROM SOURCE. This repo is public, so a key committed here is a
+    // published key - the previous one was, and was rotated on 2026-08-09 because of it. Same
+    // pattern as the intervals.icu rotation: the value lives in `wrangler secret put USDA_API_KEY`
+    // and nothing but the NAME appears in git.
+    //
+    // Fail LOUDLY rather than silently. Falling back to a blank key would make every FDC call come
+    // back 403 and the search would quietly degrade to local-table-only results - which is exactly
+    // the failure mode this proxy already shipped once and nobody noticed for months.
+    const usdaKey = (env && env.USDA_API_KEY) || ''
+    if (!usdaKey) {
+      return new Response(JSON.stringify({foods: localResults,
+        error: 'USDA_API_KEY secret is not set on the worker - only local results are available'}), {headers})
+    }
+    const KEY = '&api_key=' + encodeURIComponent(usdaKey)
     const usdaUrl = FDC + encodeURIComponent(q)
       + '&pageSize=20&sortBy=score&sortOrder=desc&dataType=Branded,Foundation,SR%20Legacy' + KEY
     const genericUrl = FDC + encodeURIComponent(q)
