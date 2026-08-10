@@ -398,17 +398,36 @@ export default {
       .replace(/\s+/g, ' ')
       .trim();
   }
+  // The old version was replace(/(ies)$/,'y').replace(/(es)$/,'').replace(/s$/,'') applied in
+  // sequence, which mangled words that merely END in those letters rather than being plurals:
+  // "cheese" -> "chee", "molasses" -> "molass". Both sides of a comparison got the same mangling so
+  // it rarely showed, but it widened every match. Only strip what is plausibly a plural.
   function stripPlural(s) {
-    return s.replace(/(ies)$/, 'y').replace(/(es)$/, '').replace(/s$/, '');
+    if (s.length <= 3) return s;
+    if (/ies$/.test(s)) return s.slice(0, -3) + 'y';
+    if (/s$/.test(s) && !/ss$/.test(s)) return s.slice(0, -1);
+    return s;
   }
+  // A ONE-LETTER TOKEN MUST NOT PREFIX-MATCH A WHOLE WORD. This is the bug that returned Chick-fil-A
+  // nuggets and waffle fries for "asparagus": the brand normalises to the tokens
+  // ["chick","fil","a"], and the old condition qt.indexOf(tt) === 0 asked "does the QUERY token
+  // start with the TARGET token" - so the token "a" matched every query beginning with the letter a.
+  // asparagus, almonds, apple, avocado: all of Chick-fil-A, every time.
+  //
+  // Prefix matching in either direction is only meaningful once a token is long enough to carry
+  // information. Below that, require an exact match.
+  const MIN_PREFIX_TOKEN = 3;
   function fuzzyTokenMatch(query, target) {
     const qTokens = normalizeQ(query).split(' ').filter(Boolean);
     const tTokens = normalizeQ(target).split(' ').filter(Boolean);
+    if (!qTokens.length) return false;
     return qTokens.every(qt => {
       const qtSing = stripPlural(qt);
       return tTokens.some(tt => {
         const ttSing = stripPlural(tt);
-        return tt.indexOf(qt) === 0 || qt.indexOf(tt) === 0 || ttSing === qtSing || tt.indexOf(qtSing) === 0;
+        if (tt === qt || ttSing === qtSing) return true;                       // exact, any length
+        if (tt.length < MIN_PREFIX_TOKEN || qt.length < MIN_PREFIX_TOKEN) return false;
+        return tt.indexOf(qt) === 0 || qt.indexOf(tt) === 0 || tt.indexOf(qtSing) === 0;
       });
     });
   }
@@ -431,7 +450,12 @@ export default {
     return scored.map(x => ({
       n: x.food.name + (x.food.brand && x.food.brand !== 'Generic' ? ' - ' + x.food.brand : ''),
       cal: x.food.calories, p: x.food.protein, c: x.food.carbs, f: x.food.fat,
-      srv: x.food.serving
+      srv: x.food.serving,
+      // Tier metadata, so the caller can tell where a row came from. This table is a hand-curated
+      // restaurant/brand list, so nothing in it is a generic ingredient unless it says Generic.
+      dataType: 'Local',
+      brand: (x.food.brand && x.food.brand !== 'Generic') ? x.food.brand : null,
+      generic: !x.food.brand || x.food.brand === 'Generic'
     }));
   }
 
@@ -440,10 +464,11 @@ export default {
   try {
     const localResults = searchLocalFoods(q);
 
-    if (localResults.length >= 5) {
-      return new Response(JSON.stringify({foods: localResults}), {headers})
-    }
-
+    // USDA IS ALWAYS QUERIED. This used to early-return whenever the local table produced 5 or more
+    // matches, which is why "beef" (8 local hits), "milk" (7), "rice" (8) and "cheese, slice"
+    // (exactly 5) came back with ZERO USDA rows while "beef r" (under 5 local hits) came back with
+    // 16. It looked like a query-length rule and was not: it was a local-hit-count rule, and it hid
+    // the entire generic-ingredient database behind a handful of restaurant menu items.
     const usdaUrl = 'https://api.nal.usda.gov/fdc/v1/foods/search?query=' + encodeURIComponent(q)
       + '&pageSize=20&sortBy=score&sortOrder=desc&dataType=Branded,Foundation,SR%20Legacy'
       + '&api_key=bC38HIShNhDzbFJH9jQUa6HgGFLKzMeeHNrhEeUB'
@@ -456,9 +481,21 @@ export default {
       const usdaData = await usdaRes.json()
       const usdaFoods = (usdaData.foods||[]).map(p => {
         let cal=0,pro=0,carb=0,fat=0,fiber=0,sugar=0,sodium=0,satFat=0
+        // ENERGY IS NOT ALWAYS NUTRIENT 1008, AND THAT IS WHY cal CAME BACK 0.
+        // Measured against FDC: SR Legacy and Branded rows carry 1008 (Energy, KCAL), but
+        // FOUNDATION rows do not carry 1008 at all - they carry 2047 (Energy, Atwater General
+        // Factors) and 2048 (Energy, Atwater Specific Factors), both already in KCAL. Reading only
+        // 1008 meant every Foundation food landed with cal 0 next to real protein and fat, e.g.
+        // "Beef, tenderloin steak, raw" which is actually 143-149 kcal. Logging one would have
+        // silently under-counted the day, so this is a data-integrity fix, not a cosmetic one.
+        // 1062 is the same energy expressed in kJ and is the last resort.
+        let calAtwaterSpecific=0, calAtwaterGeneral=0, kJ=0
         ;(p.foodNutrients||[]).forEach(n => {
           const id=n.nutrientId||n.nutrientNumber, v=n.value||0
           if(id==1008||id=='208') cal=Math.round(v)
+          else if(id==2048||id=='957') calAtwaterSpecific=Math.round(v)
+          else if(id==2047||id=='956') calAtwaterGeneral=Math.round(v)
+          else if(id==1062||id=='268') kJ=v
           else if(id==1003||id=='203') pro=Math.round(v*10)/10
           else if(id==1005||id=='205') carb=Math.round(v*10)/10
           else if(id==1004||id=='204') fat=Math.round(v*10)/10
@@ -467,10 +504,22 @@ export default {
           else if(id==1093||id=='307') sodium=Math.round(v)
           else if(id==1258||id=='606') satFat=Math.round(v*10)/10
         })
+        // Atwater Specific is the food-specific calculation and is preferred over the general
+        // factors when FDC publishes both; kJ is converted only if no kcal figure exists at all.
+        if(!cal) cal = calAtwaterSpecific || calAtwaterGeneral || (kJ ? Math.round(kJ/4.184) : 0)
         if(!cal && p.dataType==='Branded') return null
         const brand = (p.brandOwner||p.brandName||'').split(',')[0].trim()
         const srv = p.servingSize ? Math.round(p.servingSize)+(p.servingSizeUnit||'g') : '1 serving'
-        return {n:p.description+(brand?' - '+brand:''), cal, p:pro, c:carb, f:fat, fiber, sugar, sodium, satFat, srv}
+        // TIER METADATA, PASSED THROUGH RATHER THAN DISCARDED. FDC distinguishes generic
+        // ingredients (Foundation, SR Legacy, Survey/FNDDS) from retail products (Branded) in its
+        // own schema, and the proxy was throwing that away - so the caller received a flat list with
+        // no way to prefer "Cheese, cheddar" over a Culver's sandwich even when both came back.
+        // `generic` is the derived one-field answer; dataType and fdcId are kept so a future ranker
+        // (or a bug report) can see exactly what FDC said.
+        const dt = p.dataType || null
+        return {n:p.description+(brand?' - '+brand:''), cal, p:pro, c:carb, f:fat, fiber, sugar, sodium, satFat, srv,
+                dataType: dt, fdcId: p.fdcId || null, brand: brand || null,
+                generic: dt === 'Foundation' || dt === 'SR Legacy' || dt === 'Survey (FNDDS)'}
       }).filter(Boolean)
       foods = foods.concat(usdaFoods)
     }
@@ -482,7 +531,23 @@ export default {
       seen.add(key); return true
     })
 
-    return new Response(JSON.stringify({foods: deduped.slice(0,25)}), {headers})
+    // QUERYING USDA IS NOT ENOUGH ON ITS OWN - the rows have to survive the cut. Local hits are
+    // concatenated first, so on a broad term like "cheese" a table full of restaurant matches would
+    // fill all 25 slots and the USDA rows would be fetched and then silently discarded, which looks
+    // identical to never querying them. So local is capped and USDA gets the rest; any local
+    // overflow comes back only if USDA left room.
+    //
+    // This is a CAPACITY guarantee, not relevance ranking. Ordering within each tier is untouched
+    // and no cross-tier scoring is applied - that is the separate ranking work the dataType field
+    // added above is there to enable.
+    const LIMIT = 25, LOCAL_RESERVE = 8
+    const localRows = deduped.filter(f => f.dataType === 'Local')
+    const usdaRows  = deduped.filter(f => f.dataType !== 'Local')
+    const out = localRows.slice(0, LOCAL_RESERVE)
+      .concat(usdaRows.slice(0, LIMIT - Math.min(localRows.length, LOCAL_RESERVE)))
+    if (out.length < LIMIT) out.push(...localRows.slice(LOCAL_RESERVE, LOCAL_RESERVE + (LIMIT - out.length)))
+
+    return new Response(JSON.stringify({foods: out.slice(0, LIMIT)}), {headers})
   } catch(e) {
     return new Response(JSON.stringify({foods:[], error: e.message}), {headers})
   }
