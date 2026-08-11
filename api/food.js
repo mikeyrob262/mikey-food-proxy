@@ -15,10 +15,26 @@ export default {
 
   // ── STRAVA OAUTH ─────────────────────────────────────────────────────────
   const STRAVA_CLIENT_ID = '260935';
-  const STRAVA_CLIENT_SECRET = '570c52239e99be3ba40d9c47ed78d5107c5725ba';
+  // The literal that stood here was a Strava client_secret, hardcoded in a PUBLIC repo. It is
+  // the PRE-ROTATION secret and is already dead - verified by exchanging with it: Strava
+  // returns resource:"Application" (credentials rejected), where the live one returns
+  // resource:"RefreshToken". So this was inert, but it read as live to anyone who found it,
+  // and every endpoint below was silently broken because of it.
+  //
+  // Now read from the Worker env. Unset means these routes fail LOUDLY with not_configured
+  // rather than sending a dead credential to Strava and reporting an auth error.
+  //
+  // NOTE: nothing calls these routes. The app's only uses of this Worker are /search and
+  // /claude; its Strava OAuth lives in the Training-plan Worker's own /api/strava/token.
+  // They are kept rather than deleted because removing routes was not asked for - say the
+  // word and the whole block goes.
+  const STRAVA_CLIENT_SECRET = (env && env.STRAVA_CLIENT_SECRET) || '';
   const STRAVA_REDIRECT_URI = 'https://mikey-food-api2.mgrobinson07.workers.dev/strava/callback';
 
   // Step 1: Redirect to Strava auth page
+  if (url.pathname.indexOf('/strava') === 0 && !STRAVA_CLIENT_SECRET) {
+    return new Response(JSON.stringify({ error: 'not_configured', detail: 'STRAVA_CLIENT_SECRET is not set on this Worker' }), { status: 503, headers });
+  }
   if (url.pathname === '/strava/auth') {
     const appUrl = url.searchParams.get('app') || 'https://training-plan.mgrobinson07.workers.dev';
     const scope = 'read,activity:read_all';
